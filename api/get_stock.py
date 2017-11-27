@@ -68,7 +68,7 @@ def create_table(db, tablename):
     db.commit()
 
 
-def checK_table(db, tablename):
+def check_table(db, tablename):
     ''' check if table exist or not '''
     cur_ = db.cursor()
     query = "SELECT * FROM information_schema.tables WHERE table_name = '{}' LIMIT 1;".format(tablename)
@@ -112,9 +112,9 @@ def db_conn(db, symbol: str, operation: str, payload: dict):
         cur_.execute(query_update)
     elif operation == 'delete':
         cur_.execute(query_delete)
-    print(cur_)
     db.commit()
     cur_.close()
+    return data
 
 
 def get_price_normal(symbol: str):
@@ -165,6 +165,8 @@ def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
             resp = urllib.request.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
+            if check_table(db, symbol) == True:
+                create_table(db, symbol)
             obj = db_conn(db, symbol, 'insert', result)
 
         except:
@@ -177,53 +179,42 @@ def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
 
 if __name__ == '__main__':
     start = time.time()  # counting start time
-    # UNCOMMENT TO use multiprocessing
-    # result = get_price_normal('BBCA')
-    result = [{'NAME': 'Bank Central Asia Tbk', 'PREV': 21000, 'OPEN': 20825, 'OPENc': 1, 'HIGH': 21300, 'HIGHc': 0, 'LOW': 20825, 'LOWc': 1, 'LAST': 21300, 'LASTc': 0, 'CHG': '+300', 'PCT': '+1.43%', 'FREQ': 5437, 'VOL': '15.63 M', 'VAL': '328.90 B', 'PER': '23.38', 'AVG': '21043.60', 'AVGc': 0, 'MKTCap': '525.15 T'}, {'PERIOD': '', 'DATA': []}, [{'BID': 21050, 'BIDc': 0, 'BIDVol': 90, 'BIDFreq': 1, 'ASK': 21300, 'ASKc': 0, 'ASKVol': 5651, 'ASKFreq': 44}, {'BID': 20925, 'BIDc': 1, 'BIDVol': 2, 'BIDFreq': 1, 'ASK': 21325, 'ASKc': 0, 'ASKVol': 363, 'ASKFreq': 6}, {'BID': 20900, 'BIDc': 1, 'BIDVol': 3313, 'BIDFreq': 17, 'ASK': 21350, 'ASKc': 0, 'ASKVol': 2237, 'ASKFreq': 14}, {'BID': 20875, 'BIDc': 1, 'BIDVol': 3010, 'BIDFreq': 20, 'ASK': 21375, 'ASKc': 0, 'ASKVol': 53, 'ASKFreq': 5}, {'BID': 20850, 'BIDc': 1, 'BIDVol': 929, 'BIDFreq': 24, 'ASK': 21400, 'ASKc': 0, 'ASKVol': 2453, 'ASKFreq': 22}], [{'PRICE': 20825, 'PRICEc': 1, 'VOL': 3013, 'VOLPct': '1.93%', 'FREQ': 130, 'FREQPct': '2.39%'}, {'PRICE': 20850, 'PRICEc': 1, 'VOL': 4922, 'VOLPct': '3.15%', 'FREQ': 84, 'FREQPct': '1.54%'}, {'PRICE': 20875, 'PRICEc': 1, 'VOL': 3470, 'VOLPct': '2.22%', 'FREQ': 163, 'FREQPct': '3.00%'}, {'PRICE': 20900, 'PRICEc': 1, 'VOL': 5665, 'VOLPct': '3.62%', 'FREQ': 214, 'FREQPct': '3.94%'}, {'PRICE': 20925, 'PRICEc': 1, 'VOL': 5602, 'VOLPct': '3.58%', 'FREQ': 254, 'FREQPct': '4.67%'}, {'PRICE': 20950, 'PRICEc': 1, 'VOL': 13595, 'VOLPct': '8.70%', 'FREQ': 774, 'FREQPct': '14.24%'}, {'PRICE': 20975, 'PRICEc': 1, 'VOL': 41481, 'VOLPct': '26.54%', 'FREQ': 1105, 'FREQPct': '20.32%'}, {'PRICE': 21000, 'PRICEc': 2, 'VOL': 18710, 'VOLPct': '11.97%', 'FREQ': 905, 'FREQPct': '16.65%'}, {'PRICE': 21025, 'PRICEc': 0, 'VOL': 5920, 'VOLPct': '3.79%', 'FREQ': 488, 'FREQPct': '8.98%'}, {'PRICE': 21050, 'PRICEc': 0, 'VOL': 6047, 'VOLPct': '3.87%', 'FREQ': 456, 'FREQPct': '8.39%'}, {'PRICE': 21075, 'PRICEc': 0, 'VOL': 5484, 'VOLPct': '3.51%', 'FREQ': 232, 'FREQPct': '4.27%'}, {'PRICE': 21100, 'PRICEc': 0, 'VOL': 8475, 'VOLPct': '5.42%', 'FREQ': 268, 'FREQPct': '4.93%'}, {'PRICE': 21125, 'PRICEc': 0, 'VOL': 3762, 'VOLPct': '2.41%', 'FREQ': 66, 'FREQPct': '1.21%'}, {'PRICE': 21300, 'PRICEc': 0, 'VOL': 30147, 'VOLPct': '19.29%', 'FREQ': 298, 'FREQPct': '5.48%'}]]
-    # print(db_conn('/BBCA', 'BBCA', 'BBCA', result))
-    # ------------------------
-
     config = {
         'host': host, 'user': username,
         'password': password, 'database': db_name,
     }
 
-    # db = MySQLdb.connect(
-    #     connect_timeout=5,
-    #     **config
-    # )
+    # db = MySQLdb.connect(**config)
     db = psycopg2.connect(**config)
-    # create_table(db, 'coba')
-    db_conn(db, 'coba', 'insert', result)
 
-    # # UNCOMMENT to use multithreading
-    # result = []
-    # in_queue = queue.Queue()
-    # exit_event = threading.Event()
-    # lock = threading.Lock()
+    # UNCOMMENT to use multithreading
+    result = []
+    in_queue = queue.Queue()
+    exit_event = threading.Event()
+    lock = threading.Lock()
 
-    # workers = []
-    # for symbol in code_symbols:
-    #     worker = threading.Thread(
-    #                 target=get_price_threading,
-    #                 args=(db, symbol, in_queue, result, exit_event, lock)
-    #             )
-    #     worker.daemon = True
-    #     workers.append(worker)
+    workers = []
+    for symbol in code_symbols:
+        worker = threading.Thread(
+                    target=get_price_threading,
+                    args=(db, symbol, in_queue, result, exit_event, lock)
+                )
+        worker.daemon = True
+        workers.append(worker)
 
-    # for worker in workers:
-    #     worker.start()
+    for worker in workers:
+        worker.start()
 
-    # for symbol in code_symbols:
-    #     in_queue.put(symbol)
+    for symbol in code_symbols:
+        in_queue.put(symbol)
 
-    # in_queue.join()
-    # exit_event.set()
+    in_queue.join()
+    exit_event.set()
 
-    # for worker in workers:
-    #     worker.join()
+    for worker in workers:
+        worker.join()
 
-    # # ------------------------
-    # print(result)
-    # end = time.time()  # couting end time
-    # print("execution time: {}".format(end - start))
+    # ------------------------
+    print(result)
+    end = time.time()  # couting end time
+    print("execution time: {}".format(end - start))
