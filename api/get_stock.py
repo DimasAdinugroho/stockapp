@@ -24,9 +24,26 @@ username = config('USERNAME')
 password = config('PASSWORD')
 
 
+def change_value(value):
+    comp_ = re.compile(r'[0-9.]+')
+    if 'T' in value:
+        trillion = 1000000000000
+        return int(float(comp_.findall(value)[0]) * trillion)
+    elif 'B' in value:
+        billion = 1000000000
+        return int(float(comp_.findall(value)[0]) * billion)
+    if 'M' in value:
+        million = 1000000
+        return int(float(comp_.findall(value)[0]) * million)
+
+
+def change_pct(value):
+    return value.replace('%', '')
+
+
 def db_conn(db, symbol: str, operation: str, payload: dict):
 
-    cur_ = db.cursor()
+    # cur_ = db.cursor()
     comp_ = re.compile(r'd\+')  # get only number only
 
     # this it the column name in database
@@ -34,14 +51,14 @@ def db_conn(db, symbol: str, operation: str, payload: dict):
 
     # insert payload to column
     timestamp = time.time()
-    price = payload['LAST']
-    change = payload['PCT']
-    turn_over = comp_.findall(payload['VAL'])[0]
-    market_cap = comp_.findall(payload['MKTCap'])[0]
-    volume = payload['VOL']
-    freq = payload['FREQ']
-    ask = payload['ASKVol']
-    bid = payload['BIDVOL']
+    price = payload[0]['LAST']
+    change = change_pct(payload[0]['PCT'])
+    turn_over = change_value(payload[0]['VAL'])
+    market_cap = change_value(payload[0]['MKTCap'])
+    volume = change_value(payload[0]['VOL'])
+    freq = payload[0]['FREQ']
+    ask = payload[2][0]['ASKVol']
+    bid = payload[2][0]['BIDVol']
 
     data = '({}, {}, {}, {}, {}, {}, {}, {}, {})'.format(
         timestamp, price, change, turn_over, market_cap, volume, freq, ask, bid
@@ -78,10 +95,10 @@ def get_price_normal(symbol: str):
     req_ = urllib.request.Request(url, data, headers=headers)
     resp = urllib.request.urlopen(req_)
     resp_data = resp.read()
-    return json.loads(json.dumps(resp_data.decode("utf-8")))
+    return eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
 
 
-def get_price_threading(symbol, in_queue, lst, exit_event, lock):
+def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
     """Get Stock Price per symbol: benchmark 1.83 second
 
     Args:
@@ -108,7 +125,9 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock):
             req_ = urllib.request.Request(url, data, headers=headers)
             resp = urllib.request.urlopen(req_)
             resp_data = resp.read()
-            obj = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
+            result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
+            obj = db_conn(db, symbol, 'insert', result)
+
         except:
             continue
 
@@ -119,9 +138,9 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock):
 
 if __name__ == '__main__':
     start = time.time()  # counting start time
-    # UNCOMMENT TO use multiprocessing
-    # p = Pool(5)
-    # print(p.map(get_price, symbol))
+    # UNCOMMENT TO use multiprocessing    
+    result = get_price_normal('BBCA')
+    print(db_conn('BBCA', 'BBCA', 'BBCA', result))
     # ------------------------
 
     config = {
@@ -144,7 +163,7 @@ if __name__ == '__main__':
     for symbol in code_symbols:
         worker = threading.Thread(
                     target=get_price_threading,
-                    args=(symbol, in_queue, result, exit_event, lock)
+                    args=(db, symbol, in_queue, result, exit_event, lock)
                 )
         worker.daemon = True
         workers.append(worker)
@@ -162,6 +181,6 @@ if __name__ == '__main__':
         worker.join()
 
     # ------------------------
-    print(result)
+    # print(result)
     end = time.time()  # couting end time
     print("execution time: {}".format(end - start))
