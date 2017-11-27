@@ -49,6 +49,7 @@ def change_pct(value):
 
 
 def create_table(db, tablename):
+    ''' Create table on database '''
     cur_ = db.cursor()
     query = """
         DROP TABLE IF EXISTS {}; CREATE TABLE {} (
@@ -81,7 +82,7 @@ def check_table(db, tablename):
 
 
 def db_conn(db, symbol: str, operation: str, payload: dict):
-
+    ''' Insert row tp db per data '''
     cur_ = db.cursor()
     comp_ = re.compile(r'd\+')  # get only number only
 
@@ -140,6 +141,7 @@ def get_price_normal(symbol: str):
 def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
     """Get Stock Price per symbol: benchmark 1.83 second
 
+    For every crawling result, will be save automatically into database
     Args:
         symbol (str): Description
         in_queue (Queue): Symbol Name
@@ -165,7 +167,7 @@ def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
             resp = urllib.request.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-            if check_table(db, symbol) == True:
+            if check_table(db, symbol) == False:
                 create_table(db, symbol)
             obj = db_conn(db, symbol, 'insert', result)
 
@@ -184,8 +186,8 @@ if __name__ == '__main__':
         'password': password, 'database': db_name,
     }
 
-    # db = MySQLdb.connect(**config)
-    db = psycopg2.connect(**config)
+    db = MySQLdb.connect(**config)
+    # db = psycopg2.connect(**config)
 
     # UNCOMMENT to use multithreading
     result = []
@@ -194,6 +196,7 @@ if __name__ == '__main__':
     lock = threading.Lock()
 
     workers = []
+    # For every symbol will start new threading and execute function concurrently
     for symbol in code_symbols:
         worker = threading.Thread(
                     target=get_price_threading,
