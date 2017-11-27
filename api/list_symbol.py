@@ -1,3 +1,4 @@
+# list of symbol
 code_symbols = [
     'WSKT', 'MYOR', 'BRPT', 'MIKA', 'WIKA', 'SCMA', 'ADRO', 'PGAS', 'BSDE',
     'KLBF', 'LSIP', 'MNCN', 'SSMS', 'ASGR', 'JPFA', 'PTRO', 'BNGA', 'CTRA',

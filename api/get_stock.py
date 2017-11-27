@@ -2,6 +2,7 @@
 
 import re
 import time
+import datetime
 import json
 import queue
 import threading
@@ -27,18 +28,32 @@ username = config('DB_USERNAME')
 password = config('DB_PASSWORD')
 
 
+def time_diff(t1, t2):
+    # caveat emptor - assumes t1 & t2 are python times, on the same day and t2 is after t1
+    h1, m1, s1 = t1.hour, t1.minute, t1.second
+    h2, m2, s2 = t2.hour, t2.minute, t2.second
+    t1_secs = s1 + 60 * (m1 + 60*h1)
+    t2_secs = s2 + 60 * (m2 + 60*h2)
+    return(t2_secs - t1_secs)
+
+
 def change_value(value):
     ''' parse value to the integer'''
     comp_ = re.compile(r'[0-9.]+')
+    if 'K' in value:
+        kilo = 1000
+        return int(float(comp_.findall(value)[0]) * kilo)
     if 'T' in value:
         trillion = 1000000000000
         return int(float(comp_.findall(value)[0]) * trillion)
     elif 'B' in value:
         billion = 1000000000
         return int(float(comp_.findall(value)[0]) * billion)
-    if 'M' in value:
+    elif 'M' in value:
         million = 1000000
         return int(float(comp_.findall(value)[0]) * million)
+    else:
+        return int(float(value))
 
 
 def change_pct(value):
@@ -48,14 +63,14 @@ def change_pct(value):
     return value.replace('%', '')
 
 
-def create_table(db, tablename):
+def create_table(cursor, tablename):
     ''' Create table on database '''
-    cur_ = db.cursor()
+    # cur_ = db.cursor()
     query = """
-        DROP TABLE IF EXISTS {}; CREATE TABLE {} (
+        CREATE TABLE {} (
         itemTime TIMESTAMP NOT NULL,
         itemPrice INT NOT NULL,
-        itemChange NUMERIC,
+        itemChange DECIMAL(5,2),
         itemTurnover BIGINT,
         itemMarketcap BIGINT,
         itemVolume BIGINT,
@@ -64,9 +79,7 @@ def create_table(db, tablename):
         itemBid INT,
         PRIMARY KEY (itemTime)
         );""".format(tablename, tablename)
-    cur_.execute(query)
-    cur_.close()
-    db.commit()
+    cursor.execute(query)
 
 
 def check_table(db, tablename):
@@ -81,10 +94,9 @@ def check_table(db, tablename):
     return False
 
 
-def db_conn(db, symbol: str, operation: str, payload: dict):
+def db_conn(symbol: str, operation: str, payload: dict, db=None, cur_=None):
     ''' Insert row tp db per data '''
-    cur_ = db.cursor()
-    comp_ = re.compile(r'd\+')  # get only number only
+    # cur_ = db.cursor()
 
     # this it the column name in database
     column_name = ', '.join(['(itemTime', 'itemPrice', 'itemChange', 'itemTurnover', 'itemMarketcap', 'itemVolume', 'itemFreq', 'itemAsk', 'itemBid)'])
@@ -98,7 +110,6 @@ def db_conn(db, symbol: str, operation: str, payload: dict):
     freq = payload[0]['FREQ']
     ask = payload[2][0]['ASKVol']
     bid = payload[2][0]['BIDVol']
-
     data = '(NOW(), {}, {}, {}, {}, {}, {}, {}, {})'.format(
         price, change, turn_over, market_cap, volume, freq, ask, bid
     )
@@ -138,7 +149,7 @@ def get_price_normal(symbol: str):
     return eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
 
 
-def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
+def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=None):
     """Get Stock Price per symbol: benchmark 1.83 second
 
     For every crawling result, will be save automatically into database
@@ -160,6 +171,14 @@ def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
             continue
 
         try:
+            if db is None:
+                config = {
+                    'host': host, 'user': username,
+                    'password': password, 'database': db_name,
+                }
+                db = MySQLdb.connect(**config)
+            if cur_ is None:
+                cur_ = db.cursor()
             values = {'code': symbol}
             data = urllib.parse.urlencode(values)
             data = data.encode('utf-8')  # data should be bytes
@@ -167,11 +186,12 @@ def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
             resp = urllib.request.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-            if check_table(db, symbol) == False:
-                create_table(db, symbol)
-            obj = db_conn(db, symbol, 'insert', result)
-
-        except:
+            obj = db_conn(symbol, 'insert', result, db, cur_)
+            db.commit()
+            cur_.close()
+            db.close()
+        except BaseException as e:
+            print(e, symbol)
             continue
 
         lock.acquire()
@@ -180,15 +200,27 @@ def get_price_threading(db, symbol, in_queue, lst, exit_event, lock):
 
 
 if __name__ == '__main__':
-    start = time.time()  # counting start time
+    # credential for database
     config = {
         'host': host, 'user': username,
         'password': password, 'database': db_name,
     }
-
     db = MySQLdb.connect(**config)
-    # db = psycopg2.connect(**config)
+    cur_ = db.cursor()
 
+    # create table if not exist
+    for symbol in code_symbols:
+        if check_table(db, symbol) == False:
+            create_table(db, symbol)
+
+    sleep_time = 0  # in seconds
+    start = time.time()  # counting start time
+    end_trading = datetime.time(hour=17)
+
+    # create_table(cur_, symbol)
+    now = datetime.datetime.now()
+
+    # while time_diff(now, end_trading) > 0:
     # UNCOMMENT to use multithreading
     result = []
     in_queue = queue.Queue()
@@ -200,7 +232,7 @@ if __name__ == '__main__':
     for symbol in code_symbols:
         worker = threading.Thread(
                     target=get_price_threading,
-                    args=(db, symbol, in_queue, result, exit_event, lock)
+                    args=(symbol, in_queue, result, exit_event, lock)
                 )
         worker.daemon = True
         workers.append(worker)
@@ -216,8 +248,12 @@ if __name__ == '__main__':
 
     for worker in workers:
         worker.join()
-
     # ------------------------
     print(result)
     end = time.time()  # couting end time
     print("execution time: {}".format(end - start))
+    time.sleep(sleep_time)
+    now = datetime.datetime.now()
+    cur_.close()
+    db.commit()
+    db.close()
