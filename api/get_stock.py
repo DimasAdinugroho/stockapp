@@ -13,7 +13,8 @@ import psycopg2
 from pprint import pprint
 from decouple import config
 
-import Queue as queue
+
+import Queue
 # for compatibility to python 2.7
 try:
     import urllib.request as httprequest
@@ -146,11 +147,10 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
         cur_.execute(query_update)
     elif operation == 'delete':
         cur_.execute(query_delete)
-
     db.commit()
     cur_.close()
     db.close()
-    return data
+    return payload
 
 
 def get_price_normal(symbol):
@@ -189,20 +189,20 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
         try:
             item = in_queue.get(timeout=2e-2)
             in_queue.task_done()
-        except queue.Empty:
+        except Queue.Empty:
             if exit_event.is_set():
                 break
             continue
 
         try:
-            values = {'code': symbol}
+            values = {'code': item}
             data = parse_url.urlencode(values)
             data = data.encode('utf-8')  # data should be bytes
             req_ = httprequest.Request(url, data, headers=headers)
             resp = httprequest.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-            obj = db_conn(symbol, 'insert', result)
+            obj = db_conn(symbol, 'insert', result)            
         except BaseException as e:
             print(e, symbol)
             continue
@@ -221,7 +221,7 @@ if __name__ == '__main__':
             'cursorclass': pymysql.cursors.DictCursor
         }
     db = pymysql.connect(**config)
-    # cur_ = db.cursor()
+    cur_ = db.cursor()
 
     # create table if not exist
     for symbol in code_symbols:
@@ -235,7 +235,6 @@ if __name__ == '__main__':
     end_trading = datetime.time(hour=17)
     now = datetime.datetime.now()
 
-    # while time_diff(now, end_trading) > 0:
     # UNCOMMENT to use multithreading
 
     i = 0
@@ -244,24 +243,26 @@ if __name__ == '__main__':
 
     # For every symbol will start new threading and execute function concurrently
     while len(copy_code_symbols) > 0:
-        in_queue = queue.Queue()
+        in_queue = Queue.Queue()
+        result = []
         exit_event = threading.Event()
         lock = threading.Lock()
 
         workers = []
-        result = []
 
-        for symbol in code_symbols[i:i+symbol_per_batch]:
+        list_of_symbol = code_symbols[i:i+symbol_per_batch]
+        for symbol in list_of_symbol:
             worker = threading.Thread(
                         target=get_price_threading,
                         args=(symbol, in_queue, result, exit_event, lock)
                     )
             worker.daemon = True
             workers.append(worker)
+
         for worker in workers:
             worker.start()
 
-        for symbol in code_symbols:
+        for symbol in code_symbols[i:i+symbol_per_batch]:
             in_queue.put(symbol)
 
         in_queue.join()
@@ -272,6 +273,10 @@ if __name__ == '__main__':
 
         workers = []
         result = []
+        in_queue = None
+        exit_event = None
+        lock = None
+
         copy_code_symbols = set(copy_code_symbols).difference(code_symbols[i:i+symbol_per_batch])
         i += symbol_per_batch
 
