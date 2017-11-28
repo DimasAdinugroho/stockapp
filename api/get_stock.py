@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import print_function
+
 import re
 import time
 import datetime
@@ -8,12 +10,18 @@ import queue
 import threading
 import MySQLdb
 import psycopg2
-import urllib.request
 from pprint import pprint
 from decouple import config
 
-from list_symbol import code_symbols
+# for compatibility to python 2.7
+try:
+    import urllib.request as httprequest
+    import urllib.parse as parse_url
+except ImportError:
+    import urllib2 as httprequest
+    import urllib as parse_url
 
+from list_symbol import code_symbols
 
 # def print(x):
 #     pprint(x)
@@ -94,7 +102,7 @@ def check_table(db, tablename):
     return False
 
 
-def db_conn(symbol: str, operation: str, payload: dict, db=None, cur_=None):
+def db_conn(symbol, operation, payload, db=None, cur_=None):
     ''' Insert row tp db per data '''
     # cur_ = db.cursor()
 
@@ -129,7 +137,7 @@ def db_conn(symbol: str, operation: str, payload: dict, db=None, cur_=None):
     return data
 
 
-def get_price_normal(symbol: str):
+def get_price_normal(symbol):
     """Get Stock Price per symbol: benchmark 4.5 second
 
     Args:
@@ -141,10 +149,10 @@ def get_price_normal(symbol: str):
     global url, header
 
     values = {'code': symbol}
-    data = urllib.parse.urlencode(values)
+    data = parse_url.urlencode(values)
     data = data.encode('utf-8')  # data should be bytes
-    req_ = urllib.request.Request(url, data, headers=headers)
-    resp = urllib.request.urlopen(req_)
+    req_ = httprequest.Request(url, data, headers=headers)
+    resp = httprequest.urlopen(req_)
     resp_data = resp.read()
     return eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
 
@@ -172,18 +180,26 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
 
         try:
             if db is None:
-                config = {
-                    'host': host, 'user': username,
-                    'password': password, 'database': db_name,
-                }
-                db = MySQLdb.connect(**config)
+                # for compatibility to python 2.7
+                try:
+                    config = {
+                        'host': host, 'user': username,
+                        'password': password, 'database': db_name,
+                    }
+                    db = MySQLdb.connect(**config)
+                except TypeError:
+                    config = {
+                        'host': host, 'user': username,
+                        'passwd': password, 'db': db_name,
+                    }
+                    db = MySQLdb.connect(**config)
             if cur_ is None:
                 cur_ = db.cursor()
             values = {'code': symbol}
-            data = urllib.parse.urlencode(values)
+            data = parse_url.urlencode(values)
             data = data.encode('utf-8')  # data should be bytes
-            req_ = urllib.request.Request(url, data, headers=headers)
-            resp = urllib.request.urlopen(req_)
+            req_ = httprequest.Request(url, data, headers=headers)
+            resp = httprequest.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
             obj = db_conn(symbol, 'insert', result, db, cur_)
@@ -201,12 +217,20 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
 
 if __name__ == '__main__':
     # credential for database
-    config = {
-        'host': host, 'user': username,
-        'password': password, 'database': db_name,
-    }
-    db = MySQLdb.connect(**config)
-    cur_ = db.cursor()
+    # for compatibility to python 2.7
+    try:
+        config = {
+            'host': host, 'user': username,
+            'password': password, 'database': db_name,
+        }
+        db = MySQLdb.connect(**config)
+    except TypeError:
+        config = {
+            'host': host, 'user': username,
+            'passwd': password, 'db': db_name,
+        }
+        db = MySQLdb.connect(**config)
+    # cur_ = db.cursor()
 
     # create table if not exist
     for symbol in code_symbols:
@@ -254,6 +278,6 @@ if __name__ == '__main__':
     print("execution time: {}".format(end - start))
     time.sleep(sleep_time)
     now = datetime.datetime.now()
-    cur_.close()
-    db.commit()
-    db.close()
+    # cur_.close()
+    # db.commit()
+    # db.close()
