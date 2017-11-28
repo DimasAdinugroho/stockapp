@@ -6,13 +6,13 @@ import re
 import time
 import copy
 import json
+import logging
 import datetime
 import threading
 import pymysql
 import psycopg2
 from pprint import pprint
 from decouple import config
-
 
 import Queue
 # for compatibility to python 2.7
@@ -28,6 +28,11 @@ from list_symbol import code_symbols
 # def print(x):
 #     pprint(x)
 
+logging.basicConfig(
+    format='%(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+    )
+logger = logging.getLogger(__name__)
 # url configuration
 url = config('BASE_URL')  # change to baseurl
 headers = {}  # insert request header
@@ -150,7 +155,8 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
     db.commit()
     cur_.close()
     db.close()
-    return payload
+    logger.info('query: {} for {}'.format(query_insert, symbol))
+    return data
 
 
 def get_price_normal(symbol):
@@ -202,7 +208,7 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
             resp = httprequest.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-            obj = db_conn(symbol, 'insert', result)            
+            obj = db_conn(item, 'insert', result)
         except BaseException as e:
             print(e, symbol)
             continue
@@ -276,10 +282,8 @@ if __name__ == '__main__':
         in_queue = None
         exit_event = None
         lock = None
-
-        copy_code_symbols = set(copy_code_symbols).difference(code_symbols[i:i+symbol_per_batch])
+        copy_code_symbols = list(set(copy_code_symbols).difference(code_symbols[i:i+symbol_per_batch]))
         i += symbol_per_batch
-
     end = time.time()  # couting end time
     print("execution time: {}".format(end - start))
     time.sleep(sleep_time)
