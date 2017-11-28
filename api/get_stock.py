@@ -51,15 +51,15 @@ def change_value(value):
     if 'K' in value:
         kilo = 1000
         return int(float(comp_.findall(value)[0]) * kilo)
-    if 'T' in value:
-        trillion = 1000000000000
-        return int(float(comp_.findall(value)[0]) * trillion)
-    elif 'B' in value:
-        billion = 1000000000
-        return int(float(comp_.findall(value)[0]) * billion)
     elif 'M' in value:
         million = 1000000
         return int(float(comp_.findall(value)[0]) * million)
+    elif 'B' in value:
+        billion = 1000000000
+        return int(float(comp_.findall(value)[0]) * billion)
+    elif 'T' in value:
+        trillion = 1000000000000
+        return int(float(comp_.findall(value)[0]) * trillion)
     else:
         return int(float(value))
 
@@ -71,9 +71,9 @@ def change_pct(value):
     return value.replace('%', '')
 
 
-def create_table(cursor, tablename):
+def create_table(db, tablename):
     ''' Create table on database '''
-    # cur_ = db.cursor()
+    cur_ = db.cursor()
     query = """
         CREATE TABLE {} (
         itemTime TIMESTAMP NOT NULL,
@@ -87,7 +87,9 @@ def create_table(cursor, tablename):
         itemBid INT,
         PRIMARY KEY (itemTime)
         );""".format(tablename, tablename)
-    cursor.execute(query)
+    cur_.execute(query)
+    db.commit()
+    cur_.close()
 
 
 def check_table(db, tablename):
@@ -96,6 +98,7 @@ def check_table(db, tablename):
     query = "SELECT * FROM information_schema.tables WHERE table_name = '{}' LIMIT 1;".format(tablename)
     cur_.execute(query)
     is_exist = cur_.fetchone()
+    db.commit()
     cur_.close()
     if is_exist is not None:
         return True
@@ -260,9 +263,9 @@ if __name__ == '__main__':
     for worker in workers:
         worker.join()
     # ------------------------
-    print(result)
+    # print(result)
     end = time.time()  # couting end time
-    print("execution time: {}".format(end - start))
+    # print("execution time: {}".format(end - start))
     time.sleep(sleep_time)
     now = datetime.datetime.now()
     # cur_.close()
