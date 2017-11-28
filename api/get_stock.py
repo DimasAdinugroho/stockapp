@@ -6,13 +6,13 @@ import re
 import time
 import datetime
 import json
-import queue
 import threading
-import MySQLdb
+import pymysql
 import psycopg2
 from pprint import pprint
 from decouple import config
 
+import Queue as queue
 # for compatibility to python 2.7
 try:
     import urllib.request as httprequest
@@ -46,7 +46,7 @@ def time_diff(t1, t2):
 
 
 def change_value(value):
-    ''' parse value to the integer'''
+    ''' parse currency value to the integer'''
     comp_ = re.compile(r'[0-9.]+')
     if 'K' in value:
         kilo = 1000
@@ -180,19 +180,12 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
 
         try:
             if db is None:
-                # for compatibility to python 2.7
-                try:
-                    config = {
+                config = {
                         'host': host, 'user': username,
-                        'password': password, 'database': db_name,
+                        'password': password, 'db': db_name,
+                        'cursorclass': pymysql.cursors.DictCursor
                     }
-                    db = MySQLdb.connect(**config)
-                except TypeError:
-                    config = {
-                        'host': host, 'user': username,
-                        'passwd': password, 'db': db_name,
-                    }
-                    db = MySQLdb.connect(**config)
+                db = pymysql.connect(**config)
             if cur_ is None:
                 cur_ = db.cursor()
             values = {'code': symbol}
@@ -218,18 +211,12 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
 if __name__ == '__main__':
     # credential for database
     # for compatibility to python 2.7
-    try:
-        config = {
+    config = {
             'host': host, 'user': username,
-            'password': password, 'database': db_name,
+            'password': password, 'db': db_name,
+            'cursorclass': pymysql.cursors.DictCursor
         }
-        db = MySQLdb.connect(**config)
-    except TypeError:
-        config = {
-            'host': host, 'user': username,
-            'passwd': password, 'db': db_name,
-        }
-        db = MySQLdb.connect(**config)
+    db = pymysql.connect(**config)
     # cur_ = db.cursor()
 
     # create table if not exist

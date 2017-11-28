@@ -1,2 +1,5 @@
 python-decouple
-mysqlclient
+pymysql
+Queues
+urllib2
+urllib
