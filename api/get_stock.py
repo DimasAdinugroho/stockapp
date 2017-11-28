@@ -4,8 +4,9 @@ from __future__ import print_function
 
 import re
 import time
-import datetime
+import copy
 import json
+import datetime
 import threading
 import pymysql
 import psycopg2
@@ -129,14 +130,26 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
     query_update = "UPDATE {} SET {} WHERE {};"  # unknown
     query_delete = "DELETE FROM {} WHERE {};"  # unknown
 
+    if db is None:
+        config = {
+                'host': host, 'user': username,
+                'password': password, 'db': db_name,
+                'cursorclass': pymysql.cursors.DictCursor
+            }
+        db = pymysql.connect(**config)
+    if cur_ is None:
+        cur_ = db.cursor()
+
     if operation == 'insert':
         cur_.execute(query_insert)
     elif operation == 'update':
         cur_.execute(query_update)
     elif operation == 'delete':
         cur_.execute(query_delete)
+
     db.commit()
     cur_.close()
+    db.close()
     return data
 
 
@@ -182,15 +195,6 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
             continue
 
         try:
-            if db is None:
-                config = {
-                        'host': host, 'user': username,
-                        'password': password, 'db': db_name,
-                        'cursorclass': pymysql.cursors.DictCursor
-                    }
-                db = pymysql.connect(**config)
-            if cur_ is None:
-                cur_ = db.cursor()
             values = {'code': symbol}
             data = parse_url.urlencode(values)
             data = data.encode('utf-8')  # data should be bytes
@@ -198,10 +202,7 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
             resp = httprequest.urlopen(req_)
             resp_data = resp.read()
             result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-            obj = db_conn(symbol, 'insert', result, db, cur_)
-            db.commit()
-            cur_.close()
-            db.close()
+            obj = db_conn(symbol, 'insert', result)
         except BaseException as e:
             print(e, symbol)
             continue
@@ -226,48 +227,55 @@ if __name__ == '__main__':
     for symbol in code_symbols:
         if check_table(db, symbol) == False:
             create_table(db, symbol)
+    db.commit()
+    db.close()
 
     sleep_time = 0  # in seconds
     start = time.time()  # counting start time
     end_trading = datetime.time(hour=17)
-
-    # create_table(cur_, symbol)
     now = datetime.datetime.now()
 
     # while time_diff(now, end_trading) > 0:
     # UNCOMMENT to use multithreading
-    result = []
-    in_queue = queue.Queue()
-    exit_event = threading.Event()
-    lock = threading.Lock()
 
-    workers = []
+    i = 0
+    symbol_per_batch = 20
+    copy_code_symbols = copy.deepcopy(code_symbols)
+
     # For every symbol will start new threading and execute function concurrently
-    for symbol in code_symbols:
-        worker = threading.Thread(
-                    target=get_price_threading,
-                    args=(symbol, in_queue, result, exit_event, lock)
-                )
-        worker.daemon = True
-        workers.append(worker)
+    while len(copy_code_symbols) > 0:
+        in_queue = queue.Queue()
+        exit_event = threading.Event()
+        lock = threading.Lock()
 
-    for worker in workers:
-        worker.start()
+        workers = []
+        result = []
 
-    for symbol in code_symbols:
-        in_queue.put(symbol)
+        for symbol in code_symbols[i:i+symbol_per_batch]:
+            worker = threading.Thread(
+                        target=get_price_threading,
+                        args=(symbol, in_queue, result, exit_event, lock)
+                    )
+            worker.daemon = True
+            workers.append(worker)
+        for worker in workers:
+            worker.start()
 
-    in_queue.join()
-    exit_event.set()
+        for symbol in code_symbols:
+            in_queue.put(symbol)
 
-    for worker in workers:
-        worker.join()
-    # ------------------------
-    # print(result)
+        in_queue.join()
+        exit_event.set()
+
+        for worker in workers:
+            worker.join()
+
+        workers = []
+        result = []
+        copy_code_symbols = set(copy_code_symbols).difference(code_symbols[i:i+symbol_per_batch])
+        i += symbol_per_batch
+
     end = time.time()  # couting end time
-    # print("execution time: {}".format(end - start))
+    print("execution time: {}".format(end - start))
     time.sleep(sleep_time)
     now = datetime.datetime.now()
-    # cur_.close()
-    # db.commit()
-    # db.close()
