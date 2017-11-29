@@ -228,50 +228,15 @@ def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock):
         lock.release()
 
 
-def run_thread():
-    i = 0
-    symbol_per_batch = 5
-    copy_code_symbols = copy.deepcopy(code_symbols)
-
-    # For every symbol will start new threading and execute function concurrently
-    iter_symbol = {}
-    iter_thread_id = []
-    for index, i in enumerate(split_stock(symbol_per_batch, copy_code_symbols)):
-        iter_symbol[index] = list(i)
-
-    in_queue = Queue.Queue()
-    result = []
-    exit_event = threading.Event()
-    lock = threading.Lock()
-
-    workers = []
-    for thread_id, symbols in iter_symbol.items():
-        worker = threading.Thread(
-                    target=get_price_threading,
-                    args=(thread_id, iter_symbol, in_queue, result, exit_event, lock)
-                )
-        worker.daemon = True
-        workers.append(worker)
-        iter_thread_id.append(thread_id)
-
-    for worker in workers:
-        worker.start()
-
-    for ids in iter_thread_id:
-        in_queue.put(ids)
-
-    in_queue.join()
-    exit_event.set()
-
-    for worker in workers:
-        worker.join()
-
-
 if __name__ == '__main__':
     # credential for database
-    # for compatibility to python 2.7
+
+    # CONFIGURATION
+    sleep_time = 5  # in seconds, sleep time between getting data
+    symbol_per_thread = 5  # split symbol evenly per thread
+    # END CONFIGURATION
+
     is_holiday = False
-    sleep_time = 1  # in seconds, sleep time between getting data
     now = datetime.datetime.now()
     holiday_time = TradingTime.holiday()  # holiday time
 
@@ -301,17 +266,52 @@ if __name__ == '__main__':
 
     session_1 = TradingTime(1, now.weekday())  # this session 1 time
     session_2 = TradingTime(2, now.weekday())  # this session 2 time
-
     # looping until the end of session
-    while now.hour < session_2.end.hour and now.minute < session_2.end.minute:
-
-        time.sleep(sleep_time)
+    while now.hour <= session_2.end.hour and now.minute <= session_2.end.minute:
+        # if time between session 1 end and session 2 start, it will continue to sleep
         now = datetime.datetime.now()  # update now variable
-        start = time.time()  # counting start time
+        if now.hour <= session_2.start.hour and now.minute <= session_2.start.minute and now.hour >= session_1.start.hour and now.minute >= session_1.start.minute:
+            pass
+        else:
+            start = time.time()  # counting start time
+            '''RUN SCRIPT'''
+            i = 0
+            copy_code_symbols = copy.deepcopy(code_symbols)
 
-        '''
-        RUN SCRIPT
-        '''
+            # For every symbol will start new threading and execute function concurrently
+            iter_symbol = {}
+            iter_thread_id = []
+            for index, i in enumerate(split_stock(symbol_per_thread, copy_code_symbols)):
+                iter_symbol[index] = list(i)
 
-        end = time.time()  # couting end time
-        logger.info("execution time: {}".format(end - start))
+            in_queue = Queue.Queue()
+            result = []
+            exit_event = threading.Event()
+            lock = threading.Lock()
+
+            workers = []
+            for thread_id, symbols in iter_symbol.items():
+                worker = threading.Thread(
+                            target=get_price_threading,
+                            args=(thread_id, iter_symbol, in_queue, result, exit_event, lock)
+                        )
+                worker.daemon = True
+                workers.append(worker)
+                iter_thread_id.append(thread_id)
+
+            for worker in workers:
+                worker.start()
+
+            for ids in iter_thread_id:
+                in_queue.put(ids)
+
+            in_queue.join()
+            exit_event.set()
+
+            for worker in workers:
+                worker.join()
+            time.sleep(sleep_time)
+            '''END THREAD'''
+            end = time.time()  # couting end time
+            logger.info("execution time: {} on {}".format(end - start, now))
+    logger.info("Program Terminate")
