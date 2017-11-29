@@ -310,8 +310,8 @@ if __name__ == '__main__':
 
             for worker in workers:
                 worker.join()
-            time.sleep(sleep_time)
             '''END THREAD'''
             end = time.time()  # couting end time
             logger.info("execution time: {} on {}".format(end - start, now))
+        time.sleep(sleep_time)
     logger.info("Program Terminate")
