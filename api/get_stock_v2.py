@@ -243,9 +243,14 @@ if __name__ == '__main__':
     for i in holiday_time:  # check if holiday or not
         if i.year == now.year and i.month == now.month and i.day == now.day:
             is_holiday = True
-
+    # exist, if it is holiday
     if is_holiday is True:
         logger.info('It is holiday time, no trading allowed')
+        os._exit(1)
+
+    # exist, if sunday or saturday
+    if now.weekday() in [5, 6]:
+        logger.info('It is saturday or sunday, no trading allowed')
         os._exit(1)
 
     # connect to database
@@ -266,6 +271,7 @@ if __name__ == '__main__':
 
     session_1 = TradingTime(1, now.weekday())  # this session 1 time
     session_2 = TradingTime(2, now.weekday())  # this session 2 time
+
     # looping until the end of session
     while now.hour <= session_2.end.hour and now.minute <= session_2.end.minute:
         # if time between session 1 end and session 2 start, it will continue to sleep
