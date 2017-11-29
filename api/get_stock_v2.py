@@ -273,10 +273,11 @@ if __name__ == '__main__':
     session_2 = TradingTime(2, now.weekday())  # this session 2 time
 
     # looping until the end of session
-    while now.hour <= session_2.end.hour and now.minute <= session_2.end.minute:
+    
+    while time_diff(now, session_2.end) >= 0:
         # if time between session 1 end and session 2 start, it will continue to sleep
         now = datetime.datetime.now()  # update now variable
-        if now.hour <= session_2.start.hour and now.minute <= session_2.start.minute and now.hour >= session_1.start.hour and now.minute >= session_1.start.minute:
+        if time_diff(now, session_1.end) <= 0 and time_diff(now, session_2.start) >= 0:
             pass
         else:
             start = time.time()  # counting start time
