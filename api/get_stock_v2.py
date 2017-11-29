@@ -220,7 +220,7 @@ def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock):
                 response = db_conn(symb, 'insert', result)
                 obj.append(response)
         except BaseException as e:
-            log.error(e, symbols)
+            logger.error(e, symbols)
             continue
 
         lock.acquire()
