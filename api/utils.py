@@ -1,10 +1,44 @@
 import datetime
 
-
+# CONFIGURATION
 d_regex = '%Y-%m-%d'  # format holidays YYYY-MM-DD
 holidays = [  # just insert the holidays time in here
     '2017-12-01', '2017-12-25', '2017-12-26'
 ]
+conf_1 = {
+    'start': {
+        'hour': 9,
+        'minute': 0
+    },
+    'end': {
+        'mon_thu': {
+            'hour': 12,
+            'minute': 0
+        },
+        'fri': {
+            'hour': 11,
+            'minute': 30
+        }
+    }
+}
+
+conf_2 = {
+    'start': {
+        'mon_thu': {
+            'hour': 12,
+            'minute': 0
+        },
+        'fri': {
+            'hour': 12,
+            'minute': 0
+        }
+    },
+    'end': {
+        'hour': 15,
+        'minute': 49
+    }
+}
+# END CONFIGURATION
 
 
 # Trading time
@@ -16,18 +50,36 @@ class TradingTime(object):
         fri = 4
         if session == 1:
             # same start trading time
-            self.start = datetime.time(hour=9)
+            self.start = datetime.time(
+                hour=conf_1['start']['hour'],
+                minute=conf_1['start']['minute']
+            )
             if date in mon_thu:
-                self.end = datetime.time(hour=12)
+                self.end = datetime.time(
+                    hour=conf_1['end']['mon_thu']['hour'],
+                    minute=conf_1['end']['mon_thu']['minute']
+                )
             elif date == fri:
-                self.end = datetime.time(hour=11, minute=30)
+                self.end = datetime.time(
+                    hour=conf_1['end']['mon_thu']['hour'],
+                    minute=conf_1['end']['mon_thu']['minute']
+                )
         elif session == 2:
             # same end trading time
-            self.end = datetime.time(hour=15, minute=49)
             if date in mon_thu:
-                self.start = datetime.time(hour=13, minute=30)
+                self.start = datetime.time(
+                    hour=conf_2['start']['mon_thu']['hour'],
+                    minute=conf_2['start']['mon_thu']['minute']
+                )
             elif date == fri:
-                self.start = datetime.time(hour=14)
+                self.start = datetime.time(
+                    hour=conf_2['start']['fri']['hour'],
+                    minute=conf_2['start']['fri']['minute']
+                )
+            self.end = datetime.time(
+                hour=conf_2['end']['hour'],
+                minute=conf_2['end']['minute']
+            )
 
     @staticmethod
     def holiday():
