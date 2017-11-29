@@ -25,11 +25,11 @@ conf_1 = {
 conf_2 = {
     'start': {
         'mon_thu': {
-            'hour': 12,
-            'minute': 0
+            'hour': 13,
+            'minute': 30
         },
         'fri': {
-            'hour': 12,
+            'hour': 14,
             'minute': 0
         }
     },
