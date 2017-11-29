@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import os
 import re
 import time
 import copy
@@ -23,7 +24,7 @@ except ImportError:
     import urllib2 as httprequest
     import urllib as parse_url
 
-from list_symbol import code_symbols
+from utils import TradingTime, code_symbols
 
 # def print(x):
 #     pprint(x)
@@ -43,13 +44,13 @@ username = config('DB_USERNAME')
 password = config('DB_PASSWORD')
 
 
-def time_diff(t1, t2):
-    # caveat emptor - assumes t1 & t2 are python times, on the same day and t2 is after t1
-    h1, m1, s1 = t1.hour, t1.minute, t1.second
-    h2, m2, s2 = t2.hour, t2.minute, t2.second
-    t1_secs = s1 + 60 * (m1 + 60*h1)
-    t2_secs = s2 + 60 * (m2 + 60*h2)
-    return(t2_secs - t1_secs)
+def time_diff(datetime1, datetime2):
+    ''' calculate the time differences '''
+    h1, m1, s1 = datetime1.hour, datetime1.minute, datetime1.second
+    h2, m2, s2 = datetime2.hour, datetime2.minute, datetime2.second
+    datetime1_secs = s1 + 60 * (m1 + 60*h1)
+    datetime2_secs = s2 + 60 * (m2 + 60*h2)
+    return(datetime2_secs - datetime1_secs)
 
 
 def change_value(value):
@@ -185,7 +186,7 @@ def get_price_normal(symbol):
     return eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
 
 
-def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock, db=None, cur_=None):
+def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock):
     """Get Stock Price per symbol: benchmark 1.83 second
 
     For every crawling result, will be save automatically into database
@@ -227,31 +228,7 @@ def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock, db=None
         lock.release()
 
 
-if __name__ == '__main__':
-    # credential for database
-    # for compatibility to python 2.7
-    config = {
-            'host': host, 'user': username,
-            'password': password, 'db': db_name,
-            'cursorclass': pymysql.cursors.DictCursor
-        }
-    db = pymysql.connect(**config)
-    cur_ = db.cursor()
-
-    # create table if not exist
-    for symbol in code_symbols:
-        if check_table(db, symbol) == False:
-            create_table(db, symbol)
-    db.commit()
-    db.close()
-
-    sleep_time = 0  # in seconds
-    start = time.time()  # counting start time
-    end_trading = datetime.time(hour=17)
-    now = datetime.datetime.now()
-
-    # UNCOMMENT to use multithreading
-
+def run_thread():
     i = 0
     symbol_per_batch = 5
     copy_code_symbols = copy.deepcopy(code_symbols)
@@ -289,8 +266,52 @@ if __name__ == '__main__':
     for worker in workers:
         worker.join()
 
-    # print(result)
-    end = time.time()  # couting end time
-    print("execution time: {}".format(end - start))
-    time.sleep(sleep_time)
+
+if __name__ == '__main__':
+    # credential for database
+    # for compatibility to python 2.7
+    is_holiday = False
+    sleep_time = 1  # in seconds, sleep time between getting data
     now = datetime.datetime.now()
+    holiday_time = TradingTime.holiday()  # holiday time
+
+    for i in holiday_time:  # check if holiday or not
+        if i.year == now.year and i.month == now.month and i.day == now.day:
+            is_holiday = True
+
+    if is_holiday is True:
+        logger.info('It is holiday time, no trading allowed')
+        os._exit(1)
+
+    # connect to database
+    config = {
+            'host': host, 'user': username,
+            'password': password, 'db': db_name,
+            'cursorclass': pymysql.cursors.DictCursor
+        }
+    db = pymysql.connect(**config)
+    cur_ = db.cursor()
+
+    # create table if not exist
+    for symbol in code_symbols:
+        if check_table(db, symbol) is False:
+            create_table(db, symbol)
+    db.commit()
+    db.close()
+
+    session_1 = TradingTime(1, now.weekday())  # this session 1 time
+    session_2 = TradingTime(2, now.weekday())  # this session 2 time
+
+    # looping until the end of session
+    while now.hour < session_2.end.hour and now.minute < session_2.end.minute:
+
+        time.sleep(sleep_time)
+        now = datetime.datetime.now()  # update now variable
+        start = time.time()  # counting start time
+
+        '''
+        RUN SCRIPT
+        '''
+
+        end = time.time()  # couting end time
+        logger.info("execution time: {}".format(end - start))

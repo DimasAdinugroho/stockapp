@@ -23,7 +23,8 @@ except ImportError:
     import urllib2 as httprequest
     import urllib as parse_url
 
-from list_symbol import code_symbols
+from utils import TradingTime, code_symbols
+
 
 # def print(x):
 #     pprint(x)
@@ -237,8 +238,7 @@ if __name__ == '__main__':
     db.close()
 
     sleep_time = 0  # in seconds
-    start = time.time()  # counting start time
-    end_trading = datetime.time(hour=17)
+    start = time.time()  # counting start time    
     now = datetime.datetime.now()
 
     # UNCOMMENT to use multithreading
