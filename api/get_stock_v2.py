@@ -160,6 +160,7 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
 
 
 def split_stock(n, symbols):
+    ''' split with n stock per thread '''
     from itertools import islice
 
     symbols = iter(symbols)
@@ -269,11 +270,11 @@ if __name__ == '__main__':
     db.commit()
     db.close()
 
-    session_1 = TradingTime(1, now.weekday())  # this session 1 time
-    session_2 = TradingTime(2, now.weekday())  # this session 2 time
+    session_1 = TradingTime(now.weekday(), 1)  # this session 1 time
+    session_2 = TradingTime(now.weekday(), 2)  # this session 2 time
 
     # looping until the end of session
-    
+
     while time_diff(now, session_2.end) >= 0:
         # if time between session 1 end and session 2 start, it will continue to sleep
         now = datetime.datetime.now()  # update now variable
