@@ -11,7 +11,6 @@ import logging
 import datetime
 import threading
 import pymysql
-import psycopg2
 from pprint import pprint
 from decouple import config
 
@@ -26,8 +25,9 @@ except ImportError:
 
 from utils import TradingTime, code_symbols
 
-# def print(x):
-#     pprint(x)
+
+def print(x):
+    pprint(x)
 
 logging.basicConfig(
     format='%(name)s - %(levelname)s - %(message)s',
@@ -35,13 +35,8 @@ logging.basicConfig(
     )
 logger = logging.getLogger(__name__)
 # url configuration
-url = config('BASE_URL')  # change to baseurl
-headers = {}  # insert request header
-
-host = config('HOST')
-db_name = config('DB')
-username = config('DB_USERNAME')
-password = config('DB_PASSWORD')
+url = config('BASE_URL')  # for crawling, change to baseurl
+host = config('WEB_HOST')  # for connect to API
 
 
 def time_diff(datetime1, datetime2):
@@ -79,48 +74,10 @@ def change_pct(value):
     return value.replace('%', '')
 
 
-def create_table(db, tablename):
-    ''' Create table on database '''
-    cur_ = db.cursor()
-    query = """
-        CREATE TABLE {} (
-        itemTime TIMESTAMP NOT NULL,
-        itemPrice INT NOT NULL,
-        itemChange DECIMAL(5,2),
-        itemTurnover BIGINT,
-        itemMarketcap BIGINT,
-        itemVolume BIGINT,
-        itemFreq INT,
-        itemAsk INT,
-        itemBid INT,
-        PRIMARY KEY (itemTime)
-        );""".format(tablename, tablename)
-    cur_.execute(query)
-    db.commit()
-    cur_.close()
+def post_req(symbol, payload):
+    ''' Request Post per data '''
+    global host
 
-
-def check_table(db, tablename):
-    ''' check if table exist or not '''
-    cur_ = db.cursor()
-    query = "SELECT * FROM information_schema.tables WHERE table_name = '{}' LIMIT 1;".format(tablename)
-    cur_.execute(query)
-    is_exist = cur_.fetchone()
-    db.commit()
-    cur_.close()
-    if is_exist is not None:
-        return True
-    return False
-
-
-def db_conn(symbol, operation, payload, db=None, cur_=None):
-    ''' Insert row tp db per data '''
-    # cur_ = db.cursor()
-
-    # this it the column name in database
-    column_name = ', '.join(['(itemTime', 'itemPrice', 'itemChange', 'itemTurnover', 'itemMarketcap', 'itemVolume', 'itemFreq', 'itemAsk', 'itemBid)'])
-
-    # insert payload to column
     price = payload[0]['LAST']
     change = change_pct(payload[0]['PCT'])
     turn_over = change_value(payload[0]['VAL'])
@@ -129,34 +86,27 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
     freq = payload[0]['FREQ']
     ask = payload[2][0]['ASKVol']
     bid = payload[2][0]['BIDVol']
-    data = '(NOW(), {}, {}, {}, {}, {}, {}, {}, {})'.format(
-        price, change, turn_over, market_cap, volume, freq, ask, bid
-    )
 
-    query_insert = "INSERT INTO {} {} VALUES {};".format(symbol, column_name, data)
-    query_update = "UPDATE {} SET {} WHERE {};"  # unknown
-    query_delete = "DELETE FROM {} WHERE {};"  # unknown
+    data = {
+        'itemTime': datetime.datetime.now()
+        'itemPrice': price,
+        'itemChange': change,
+        'itemTurnover': turn_over,
+        'itemMarketcap': market_cap,
+        'itemVolume': volume,
+        'itemFreq': freq,
+        'itemAsk': ask,
+        'itemBid': bid,
+    }
 
-    if db is None:
-        config = {
-                'host': host, 'user': username,
-                'password': password, 'db': db_name,
-                'cursorclass': pymysql.cursors.DictCursor
-            }
-        db = pymysql.connect(**config)
-    if cur_ is None:
-        cur_ = db.cursor()
-    if operation == 'insert':
-        cur_.execute(query_insert)
-    elif operation == 'update':
-        cur_.execute(query_update)
-    elif operation == 'delete':
-        cur_.execute(query_delete)
-    db.commit()
-    cur_.close()
-    db.close()
+    values = {'code': symbol, 'data': data}
+    data = parse_url.urlencode(values)
+    data = data.encode('utf-8')  # data should be bytes
+    req_ = httprequest.Request(host, data, headers={"Content-Type": "application/json"})
+    resp = httprequest.urlopen(req_)
+    resp_data = resp.read()
     # logger.info('query: {} for {}'.format(query_insert, symbol))
-    return data
+    return eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
 
 
 def split_stock(n, symbols):
@@ -176,9 +126,11 @@ def get_price_normal(symbol):
     Returns:
         Dict: Symbol Detail
     """
-    global url, headers
+    global url
 
-    values = {'code': symbol}
+    headers = {}  # insert request header
+
+    values = {'code': symbol, 'period': '1D'}
     data = parse_url.urlencode(values)
     data = data.encode('utf-8')  # data should be bytes
     req_ = httprequest.Request(url, data, headers=headers)
@@ -217,8 +169,8 @@ def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock):
                 req_ = httprequest.Request(url, data, headers=headers)
                 resp = httprequest.urlopen(req_)
                 resp_data = resp.read()
-                result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-                response = db_conn(symb, 'insert', result)
+                payload = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
+                response = post_req(symb, payload)
                 obj.append(response)
         except BaseException as e:
             logger.error(e, symbols)
@@ -229,7 +181,12 @@ def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock):
         lock.release()
 
 
+# def main():
+    # print(get_price_normal())
+
+
 if __name__ == '__main__':
+    # main()
     # credential for database
 
     # CONFIGURATION
@@ -253,22 +210,6 @@ if __name__ == '__main__':
     if now.weekday() in [5, 6]:
         logger.info('It is saturday or sunday, no trading allowed')
         os._exit(1)
-
-    # connect to database
-    config = {
-            'host': host, 'user': username,
-            'password': password, 'db': db_name,
-            'cursorclass': pymysql.cursors.DictCursor
-        }
-    db = pymysql.connect(**config)
-    cur_ = db.cursor()
-
-    # create table if not exist
-    for symbol in code_symbols:
-        if check_table(db, symbol) is False:
-            create_table(db, symbol)
-    db.commit()
-    db.close()
 
     session_1 = TradingTime(now.weekday(), 1)  # this session 1 time
     session_2 = TradingTime(now.weekday(), 2)  # this session 2 time

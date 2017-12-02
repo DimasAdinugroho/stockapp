@@ -10,4 +10,8 @@ develop-eggs/
 dist/
 downloads/
 
+migrations/
+api/stockcore/migrations/
 .env
+
+node_modules/

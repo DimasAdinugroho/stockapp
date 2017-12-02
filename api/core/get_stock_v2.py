@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import os
 import re
 import time
 import copy
@@ -10,7 +11,6 @@ import logging
 import datetime
 import threading
 import pymysql
-import psycopg2
 from pprint import pprint
 from decouple import config
 
@@ -26,8 +26,8 @@ except ImportError:
 from utils import TradingTime, code_symbols
 
 
-# def print(x):
-#     pprint(x)
+def print(x):
+    pprint(x)
 
 logging.basicConfig(
     format='%(name)s - %(levelname)s - %(message)s',
@@ -44,13 +44,13 @@ username = config('DB_USERNAME')
 password = config('DB_PASSWORD')
 
 
-def time_diff(t1, t2):
-    # caveat emptor - assumes t1 & t2 are python times, on the same day and t2 is after t1
-    h1, m1, s1 = t1.hour, t1.minute, t1.second
-    h2, m2, s2 = t2.hour, t2.minute, t2.second
-    t1_secs = s1 + 60 * (m1 + 60*h1)
-    t2_secs = s2 + 60 * (m2 + 60*h2)
-    return(t2_secs - t1_secs)
+def time_diff(datetime1, datetime2):
+    ''' calculate the time differences '''
+    h1, m1, s1 = datetime1.hour, datetime1.minute, datetime1.second
+    h2, m2, s2 = datetime2.hour, datetime2.minute, datetime2.second
+    datetime1_secs = s1 + 60 * (m1 + 60*h1)
+    datetime2_secs = s2 + 60 * (m2 + 60*h2)
+    return(datetime2_secs - datetime1_secs)
 
 
 def change_value(value):
@@ -146,7 +146,6 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
         db = pymysql.connect(**config)
     if cur_ is None:
         cur_ = db.cursor()
-
     if operation == 'insert':
         cur_.execute(query_insert)
     elif operation == 'update':
@@ -156,8 +155,16 @@ def db_conn(symbol, operation, payload, db=None, cur_=None):
     db.commit()
     cur_.close()
     db.close()
-    logger.info('query: {} for {}'.format(query_insert, symbol))
+    # logger.info('query: {} for {}'.format(query_insert, symbol))
     return data
+
+
+def split_stock(n, symbols):
+    ''' split with n stock per thread '''
+    from itertools import islice
+
+    symbols = iter(symbols)
+    return iter(lambda: tuple(islice(symbols, n)), ())
 
 
 def get_price_normal(symbol):
@@ -169,9 +176,9 @@ def get_price_normal(symbol):
     Returns:
         Dict: Symbol Detail
     """
-    global url, header
+    global url, headers
 
-    values = {'code': symbol}
+    values = {'code': symbol, 'period': '1D'}
     data = parse_url.urlencode(values)
     data = data.encode('utf-8')  # data should be bytes
     req_ = httprequest.Request(url, data, headers=headers)
@@ -180,7 +187,7 @@ def get_price_normal(symbol):
     return eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
 
 
-def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=None):
+def get_price_threading(tr_id, symbols, in_queue, lst, exit_event, lock):
     """Get Stock Price per symbol: benchmark 1.83 second
 
     For every crawling result, will be save automatically into database
@@ -191,7 +198,7 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
         exit_event (threading): exit event
         lock (threading): thread lock
     """
-    global url, header
+    global url, headers
     while True:
         try:
             item = in_queue.get(timeout=2e-2)
@@ -202,16 +209,19 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
             continue
 
         try:
-            values = {'code': item}
-            data = parse_url.urlencode(values)
-            data = data.encode('utf-8')  # data should be bytes
-            req_ = httprequest.Request(url, data, headers=headers)
-            resp = httprequest.urlopen(req_)
-            resp_data = resp.read()
-            result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
-            obj = db_conn(item, 'insert', result)
+            obj = []
+            for symb in symbols[item]:
+                values = {'code': symb}
+                data = parse_url.urlencode(values)
+                data = data.encode('utf-8')  # data should be bytes
+                req_ = httprequest.Request(url, data, headers=headers)
+                resp = httprequest.urlopen(req_)
+                resp_data = resp.read()
+                result = eval(json.loads(json.dumps(resp_data.decode("utf-8"))))
+                response = db_conn(symb, 'insert', result)
+                obj.append(response)
         except BaseException as e:
-            print(e, symbol)
+            logger.error(e, symbols)
             continue
 
         lock.acquire()
@@ -219,72 +229,101 @@ def get_price_threading(symbol, in_queue, lst, exit_event, lock, db=None, cur_=N
         lock.release()
 
 
+def main():
+    print(get_price_normal('ANTM'))
+
 if __name__ == '__main__':
-    # credential for database
-    # for compatibility to python 2.7
-    config = {
-            'host': host, 'user': username,
-            'password': password, 'db': db_name,
-            'cursorclass': pymysql.cursors.DictCursor
-        }
-    db = pymysql.connect(**config)
-    cur_ = db.cursor()
+    main()
+    # # credential for database
 
-    # create table if not exist
-    for symbol in code_symbols:
-        if check_table(db, symbol) == False:
-            create_table(db, symbol)
-    db.commit()
-    db.close()
+    # # CONFIGURATION
+    # sleep_time = 5  # in seconds, sleep time between getting data
+    # symbol_per_thread = 5  # split symbol evenly per thread
+    # # END CONFIGURATION
 
-    sleep_time = 0  # in seconds
-    start = time.time()  # counting start time    
-    now = datetime.datetime.now()
+    # is_holiday = False
+    # now = datetime.datetime.now()
+    # holiday_time = TradingTime.holiday()  # holiday time
 
-    # UNCOMMENT to use multithreading
+    # for i in holiday_time:  # check if holiday or not
+    #     if i.year == now.year and i.month == now.month and i.day == now.day:
+    #         is_holiday = True
+    # # exist, if it is holiday
+    # if is_holiday is True:
+    #     logger.info('It is holiday time, no trading allowed')
+    #     os._exit(1)
 
-    i = 0
-    symbol_per_batch = 20
-    copy_code_symbols = copy.deepcopy(code_symbols)
+    # # exist, if sunday or saturday
+    # if now.weekday() in [5, 6]:
+    #     logger.info('It is saturday or sunday, no trading allowed')
+    #     os._exit(1)
 
-    # For every symbol will start new threading and execute function concurrently
-    while len(copy_code_symbols) > 0:
-        in_queue = Queue.Queue()
-        result = []
-        exit_event = threading.Event()
-        lock = threading.Lock()
+    # # connect to database
+    # config = {
+    #         'host': host, 'user': username,
+    #         'password': password, 'db': db_name,
+    #         'cursorclass': pymysql.cursors.DictCursor
+    #     }
+    # db = pymysql.connect(**config)
+    # cur_ = db.cursor()
 
-        workers = []
+    # # create table if not exist
+    # for symbol in code_symbols:
+    #     if check_table(db, symbol) is False:
+    #         create_table(db, symbol)
+    # db.commit()
+    # db.close()
 
-        list_of_symbol = code_symbols[i:i+symbol_per_batch]
-        for symbol in list_of_symbol:
-            worker = threading.Thread(
-                        target=get_price_threading,
-                        args=(symbol, in_queue, result, exit_event, lock)
-                    )
-            worker.daemon = True
-            workers.append(worker)
+    # session_1 = TradingTime(now.weekday(), 1)  # this session 1 time
+    # session_2 = TradingTime(now.weekday(), 2)  # this session 2 time
 
-        for worker in workers:
-            worker.start()
+    # # looping until the end of session
 
-        for symbol in code_symbols[i:i+symbol_per_batch]:
-            in_queue.put(symbol)
+    # while time_diff(now, session_2.end) >= 0:
+    #     # if time between session 1 end and session 2 start, it will continue to sleep
+    #     now = datetime.datetime.now()  # update now variable
+    #     if time_diff(now, session_1.end) <= 0 and time_diff(now, session_2.start) >= 0:
+    #         pass
+    #     else:
+    #         start = time.time()  # counting start time
+    #         '''RUN SCRIPT'''
+    #         i = 0
+    #         copy_code_symbols = copy.deepcopy(code_symbols)
 
-        in_queue.join()
-        exit_event.set()
+    #         # For every symbol will start new threading and execute function concurrently
+    #         iter_symbol = {}
+    #         iter_thread_id = []
+    #         for index, i in enumerate(split_stock(symbol_per_thread, copy_code_symbols)):
+    #             iter_symbol[index] = list(i)
 
-        for worker in workers:
-            worker.join()
+    #         in_queue = Queue.Queue()
+    #         result = []
+    #         exit_event = threading.Event()
+    #         lock = threading.Lock()
 
-        workers = []
-        result = []
-        in_queue = None
-        exit_event = None
-        lock = None
-        copy_code_symbols = list(set(copy_code_symbols).difference(code_symbols[i:i+symbol_per_batch]))
-        i += symbol_per_batch
-    end = time.time()  # couting end time
-    print("execution time: {}".format(end - start))
-    time.sleep(sleep_time)
-    now = datetime.datetime.now()
+    #         workers = []
+    #         for thread_id, symbols in iter_symbol.items():
+    #             worker = threading.Thread(
+    #                         target=get_price_threading,
+    #                         args=(thread_id, iter_symbol, in_queue, result, exit_event, lock)
+    #                     )
+    #             worker.daemon = True
+    #             workers.append(worker)
+    #             iter_thread_id.append(thread_id)
+
+    #         for worker in workers:
+    #             worker.start()
+
+    #         for ids in iter_thread_id:
+    #             in_queue.put(ids)
+
+    #         in_queue.join()
+    #         exit_event.set()
+
+    #         for worker in workers:
+    #             worker.join()
+    #         '''END THREAD'''
+    #         end = time.time()  # couting end time
+    #         logger.info("execution time: {} on {}".format(end - start, now))
+    #     time.sleep(sleep_time)
+    # logger.info("Program Terminate")
